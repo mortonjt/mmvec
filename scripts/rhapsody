@@ -193,20 +193,19 @@ def autoseq2seq(exog_features, endog_features,
 
         # cross validation
         cv_mae = fitted_model.cross_validation(testX, testY)
-
-        return cv_mae.item()
+        return -cv_mae.item()
 
     optimizer = BayesianOptimization(
        f=blackbox_f,
        pbounds={
            "latent_dim" : (1, 100),
-           "learning_rate" : (0, 1),
-           "decay_rate" : (0, 1),
+           "learning_rate" : (1e-6, 1),
+           "decay_rate" : (1e-2, 1),
            "subsample_size" : (100, 1000),
            "mc_samples" : (1, 100),
            "batch_size" : (1, 100),
-           "beta1" : (0.5, 1),
-           "beta2" : (0.5, 1)
+           "beta1" : (0.5, 0.999),
+           "beta2" : (0.5, 0.999)
        },
         verbose=0)
 
