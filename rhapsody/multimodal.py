@@ -243,11 +243,11 @@ class MMvec(nn.Module):
                         writer.add_scalar('cv_mae', cv_mae, iteration)
                         writer.add_embedding(
                             self.embeddings.weight.detach(),
-                            global_step=iteration)
+                            global_step=iteration, tag='U')
                         # note that these are in alr coordinates
                         writer.add_embedding(
-                            self.muV.detach(),
-                            global_step=iteration, tag='muV')
+                            torch.t(self.muV).detach(),
+                            global_step=iteration, tag='V')
                         last_summary_time = now
 
                     # checkpoint model
