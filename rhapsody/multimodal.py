@@ -237,6 +237,9 @@ class MMvec(nn.Module):
                     if now - last_summary_time > summary_interval:
                         test_in, test_out = get_batch(testX, testY, i % num_samples,
                                              self.subsample_size, self.batch_size)
+                        test_in = test_in.to(device=self.device)
+                        test_out = test_out.to(device=self.device)
+
                         cv_mae = self.cross_validation(test_in, test_out)
                         iteration = i + ep*num_samples
                         writer.add_scalar('elbo', loss, iteration)
