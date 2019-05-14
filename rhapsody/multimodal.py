@@ -161,7 +161,6 @@ class MMvec(nn.Module):
         cv_size = testX.shape[0]
         n = max(1, cv_size // self.batch_size)
         cvs = torch.zeros(n, device=self.device)
-        print(cv_size, self.batch_size)
         for j, k in enumerate(range(0, cv_size, self.batch_size)):
             test_in, test_out = get_batch(
                 testX, testY, j % cv_size,
