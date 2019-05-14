@@ -19,9 +19,202 @@ from rhapsody.util import (onehot, rank_hits, random_multimodal,
                            split_tables, format_params)
 
 
+def deposit(fitted_model, model_output, microbe_ids, metabolite_ids):
+    # now extract the model weights and save them to disk
+    mu_u = fitted_model.embeddings.weight.detach().cpu().numpy()
+    mu_ub = fitted_model.bias.weight.detach().cpu().numpy().reshape(-1, 1)
+    mu_v = fitted_model.muV.detach().cpu().numpy()
+    mu_vb = fitted_model.muVb.detach().cpu().numpy().reshape(-1, 1)
+
+    std_u = np.exp(fitted_model.logstdU.weight.detach().cpu().numpy())
+    std_ub = np.exp(
+        fitted_model.logstdUb.weight.detach().cpu().numpy()
+    ).reshape(-1, 1)
+    std_v = np.exp(fitted_model.logstdV.detach().cpu().numpy())
+    std_vb = np.exp(
+        fitted_model.logstdVb.detach().cpu().numpy()
+    ).reshape(-1, 1)
+
+    otu_ids = list(map(lambda x: 'clr(%s)' % x,
+                       list(microbe_ids)))
+    ms_ids = list(metabolite_ids)
+    pc_ids = ['PC%d' % i for i in range(mu_u.shape[1])]
+    alr_ms_ids = ['log(%s:%s)' % (ms_ids[i], ms_ids[0])
+                  for i in range(1, len(ms_ids))]
+
+    df = pd.concat(
+        (
+            format_params(mu_u, std_u, pc_ids, otu_ids, 'microbe'),
+            format_params(mu_v.T, std_v.T, pc_ids, alr_ms_ids, 'metabolite'),
+            format_params(mu_ub, std_ub, ['bias'], otu_ids, 'microbe'),
+            format_params(mu_vb, std_vb, ['bias'], alr_ms_ids, 'metabolite')
+        ), axis=0)
+
+    df.to_csv(model_output)
+
+
 @click.group()
 def rhapsody():
     pass
+
+
+@rhapsody.command()
+@click.option('--exog-features',
+              help='Input sequence counts to use for prediction.')
+@click.option('--endog-features',
+              help=('Output sequence abundances to predict '
+                    'from input sequence counts.'))
+@click.option('--metadata-file', default=None,
+              help='Input sample metadata file')
+@click.option('--training-column',
+              help=('Column in the sample metadata specifying which '
+                    'samples are for training and testing.'),
+              default=None)
+@click.option('--num-testing-examples',
+              help=('Number of samples to randomly select for testing'),
+              default=10)
+@click.option('--min-feature-count',
+              help=('Minimum number of samples a microbe needs to be observed '
+                    'in order to not filter out'),
+              default=10)
+@click.option('--epochs',
+              help=('Number of epochs to train, one epoch represents the '
+                    'number of samples to process an entire dataset.'), default=10)
+@click.option('--step-size',
+              help=('Number of epochs before learning rate is decremented.'),
+              default=1)
+@click.option('--iterations',
+              help=('The number of iterations to run Bayesian optimization for '
+                    'hyper-parameter tuning'), default=10)
+@click.option('--rand_initializations',
+              help=('The number of random initializations to prime '
+                    'the Bayesian optimization.'), default=1)
+@click.option('--arm-the-gpu', is_flag=True,
+              help=('Enables GPU support'),
+              default=False)
+@click.option('--checkpoint-interval',
+              help=('Number of seconds before a storing a checkpoint.'),
+              default=1000)
+@click.option('--summary-interval',
+              help=('Number of seconds before a storing a summary.'),
+              default=1000)
+@click.option('--summary-dir', default='summarydir',
+              help=('Summary directory to save cross validation results '
+                    'and model parameters.'))
+@click.option('--tuning-output', default=None,
+              help=('Tuning log for keeping track of hyper parameter tuning.'))
+def autoseq2seq(exog_features, endog_features,
+                metadata_file, training_column,
+                num_testing_examples, min_feature_count,
+                epochs, step_size, iterations, rand_initializations,
+                arm_the_gpu, checkpoint_interval, summary_interval,
+                summary_dir, tuning_output):
+
+    input_seq_counts, output_seq_counts = exog_features, endog_features
+
+    # TODO: rename from microbes/metabolites to something more general
+    microbes = load_table(input_seq_counts)
+    metabolites = load_table(output_seq_counts)
+
+    if metadata_file is not None:
+        metadata = pd.read_table(metadata_file, index_col=0)
+    else:
+        metadata = None
+
+    res = split_tables(
+        microbes, metabolites,
+        metadata=metadata, training_column=training_column,
+        num_test=num_testing_examples,
+        min_samples=min_feature_count)
+
+    (train_microbes_df, test_microbes_df,
+     train_metabolites_df, test_metabolites_df) = res
+
+    microbe_ids = list(test_microbes_df.columns)
+    metabolite_ids = list(test_metabolites_df.columns)
+
+    params = []
+
+    trainX = csr_matrix(train_microbes_df.values)
+    testX = csr_matrix(test_microbes_df.values)
+    trainY = train_metabolites_df.values
+    testY = test_metabolites_df.values
+
+    n, d1 = trainX.shape
+    n, d2 = trainY.shape
+
+    if arm_the_gpu:
+        # pick out the first GPU
+        device_name='cuda'
+    else:
+        device_name='cpu'
+
+    try:
+        from bayes_opt import BayesianOptimization
+    except:
+        raise ImportError('Cannot run `autoseq2seq without the '
+                          '`BayesianOptimization` package installed.')
+
+    def blackbox_f(latent_dim, learning_rate, decay_rate, subsample_size,
+                   mc_samples, batch_size, beta1, beta2):
+
+        latent_dim = int(round(latent_dim))
+        subsample_size = int(round(subsample_size))
+        mc_samples = int(round(mc_samples))
+        batch_size = int(round(batch_size))
+
+        # save the parameters
+        sname = '_'.join(['log_PC(%d)' % latent_dim,
+                          'mc(%d)' % mc_samples,
+                          'samp(%d)' % batch_size,
+                          'sub(%d)' % subsample_size,
+                          'lr(%s)' % "{:.2E}".format(Decimal(learning_rate)),
+                          'decay(%s)' % "{:.2E}".format(Decimal(decay_rate)),
+                          'beta1(%.2f)' % beta1,
+                          'beta2(%.2f)' % beta2])
+
+        sname = os.path.join(summary_dir, sname)
+
+        # fit the model
+        model = MMvec(num_microbes=d1, num_metabolites=d2, latent_dim=latent_dim,
+                      batch_size=batch_size, subsample_size=subsample_size,
+                      device=device_name, save_path=sname)
+        fitted_model = model.fit(
+            trainX, trainY, testX, testY,
+            epochs=epochs, gamma=decay_rate,
+            learning_rate=learning_rate, mc_samples=mc_samples,
+            beta1=beta1, beta2=beta2, step_size=step_size,
+            summary_interval=summary_interval,
+            checkpoint_interval=checkpoint_interval)
+
+        model_output = os.path.join(sname, 'model_params.csv')
+        deposit(fitted_model, model_output, microbe_ids, metabolite_ids)
+
+
+        # cross validation
+        cv_mae = fitted_model.cross_validation(testX, testY)
+
+        return cv_mae.item()
+
+    optimizer = BayesianOptimization(
+       f=blackbox_f,
+       pbounds={
+           "latent_dim" : (1, 100),
+           "learning_rate" : (0, 1),
+           "decay_rate" : (0, 1),
+           "subsample_size" : (100, 1000),
+           "mc_samples" : (1, 100),
+           "batch_size" : (1, 100),
+           "beta1" : (0.5, 1),
+           "beta2" : (0.5, 1)
+       },
+        verbose=0)
+
+    optimizer.maximize(n_iter=iterations, init_points=rand_initializations,
+                       acq="ucb", kappa=0.1)
+    with open(tuning_output, 'w') as f:
+        for i, res in enumerate(optimizer.res):
+            f.write("Iteration {}: \n\t{}\n".format(i, res))
 
 
 @rhapsody.command()
@@ -121,11 +314,8 @@ def seq2seq(exog_features, endog_features,
     (train_microbes_df, test_microbes_df,
      train_metabolites_df, test_metabolites_df) = res
 
-    # filter out low abundance microbes
-    microbe_ids = microbes.ids(axis='observation')
-    metabolite_ids = metabolites.ids(axis='observation')
-
-    params = []
+    microbe_ids = list(train_microbes_df.columns)
+    metabolite_ids = list(train_metabolites_df.columns)
 
     sname = '_'.join(['log_PC(%d)' % latent_dim,
                       'mc(%d)' % mc_samples,
@@ -163,37 +353,7 @@ def seq2seq(exog_features, endog_features,
         summary_interval=summary_interval,
         checkpoint_interval=checkpoint_interval)
 
-    # now extract the model weights and save them to disk
-    mu_u = fitted_model.embeddings.weight.detach().cpu().numpy()
-    mu_ub = fitted_model.bias.weight.detach().cpu().numpy().reshape(-1, 1)
-    mu_v = fitted_model.muV.detach().cpu().numpy()
-    mu_vb = fitted_model.muVb.detach().cpu().numpy().reshape(-1, 1)
-
-    std_u = np.exp(fitted_model.logstdU.weight.detach().cpu().numpy())
-    std_ub = np.exp(
-        fitted_model.logstdUb.weight.detach().cpu().numpy()
-    ).reshape(-1, 1)
-    std_v = np.exp(fitted_model.logstdV.detach().cpu().numpy())
-    std_vb = np.exp(
-        fitted_model.logstdVb.detach().cpu().numpy()
-    ).reshape(-1, 1)
-
-    otu_ids = list(map(lambda x: 'clr(%s)' % x,
-                       list(train_microbes_df.columns)))
-    ms_ids = list(train_metabolites_df.columns)
-    pc_ids = ['PC%d' % i for i in range(mu_u.shape[1])]
-    alr_ms_ids = ['log(%s:%s)' % (ms_ids[i], ms_ids[0])
-                  for i in range(1, len(ms_ids))]
-
-    df = pd.concat(
-        (
-            format_params(mu_u, std_u, pc_ids, otu_ids, 'microbe'),
-            format_params(mu_v.T, std_v.T, pc_ids, alr_ms_ids, 'metabolite'),
-            format_params(mu_ub, std_ub, ['bias'], otu_ids, 'microbe'),
-            format_params(mu_vb, std_vb, ['bias'], alr_ms_ids, 'metabolite')
-        ), axis=0)
-
-    df.to_csv(model_output)
+    deposit(fitted_model, model_output, microbe_ids, metabolite_ids)
 
 
 if __name__ == '__main__':

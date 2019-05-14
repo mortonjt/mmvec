@@ -22,8 +22,7 @@ from torch.distributions.multinomial import Multinomial
 class MMvec(nn.Module):
     def __init__(self, num_microbes, num_metabolites, latent_dim,
                  batch_size=10, subsample_size=100, mc_samples=10,
-                 gain=1,
-                 device='cpu', save_path=None):
+                 gain=1, device='cpu', save_path=None):
         super(MMvec, self).__init__()
         self.num_microbes = num_microbes
         self.num_metabolites = num_metabolites
@@ -127,7 +126,7 @@ class MMvec(nn.Module):
         # https://arxiv.org/abs/1312.6114
         return 0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
 
-    def cross_validation(self, inp, out):
+    def validate(self, inp, out):
         """ Computes cross-validation scores on holdout train/test set.
 
         Here, the mean absolute error is computed, which can be interpreted
@@ -157,6 +156,21 @@ class MMvec(nn.Module):
 
         elbo = torch.mean(mean_like)
         return elbo
+
+    def cross_validation(self, testX, testY):
+        cv_size = testX.shape[0]
+        n = max(1, cv_size // self.batch_size)
+        cvs = torch.zeros(n, device=self.device)
+        for j, k in enumerate(range(0, cv_size, self.batch_size)):
+            test_in, test_out = get_batch(
+                testX, testY, j % cv_size,
+                self.subsample_size, self.batch_size)
+            test_in = test_in.to(device=self.device)
+            test_out = test_out.to(device=self.device)
+            cvs[k] = self.validate(test_in, test_out)
+
+        cv_mae = torch.mean(cvs)
+        return cv_mae
 
     def fit(self, trainX, trainY, testX, testY,
             epochs=1000, learning_rate=1e-3, mc_samples=5,
@@ -198,7 +212,7 @@ class MMvec(nn.Module):
         last_checkpoint_time = 0
         last_summary_time = 0
         best_loss = np.inf
-
+        cv_size = testX.shape[0]
         num_samples = trainY.shape[0]
         optimizer = optim.Adam(self.parameters(), betas=(beta1, beta2),
                                lr=learning_rate)
@@ -228,19 +242,14 @@ class MMvec(nn.Module):
                     loss.backward()
                     ml = loss.item()
 
-
                     # remember the best model
                     if ml < best_loss:
                         best_self = copy.deepcopy(self)
                         best_loss = ml
+
                     # save summary
                     if now - last_summary_time > summary_interval:
-                        test_in, test_out = get_batch(testX, testY, i % num_samples,
-                                             self.subsample_size, self.batch_size)
-                        test_in = test_in.to(device=self.device)
-                        test_out = test_out.to(device=self.device)
-
-                        cv_mae = self.cross_validation(test_in, test_out)
+                        cv_mae = self.cross_validation(testX, testY)
                         iteration = i + ep*num_samples
                         writer.add_scalar('elbo', loss, iteration)
                         writer.add_scalar('cv_mae', cv_mae, iteration)
@@ -263,5 +272,6 @@ class MMvec(nn.Module):
                         last_checkpoint_time = now
 
                     optimizer.step()
+
 
         return best_self
