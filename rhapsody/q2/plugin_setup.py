@@ -15,19 +15,21 @@ from q2_types.feature_data import FeatureData
 from q2_types.ordination import PCoAResults
 
 from rhapsody.q2 import (
-    Conditional, ConditionalFormat, ConditionalDirFmt,
+    MMvecConditional, MMvecConditionalFormat, MMvecConditionalDirFmt,
+    MMvecEmbedding, MMvecEmbeddingFormat, MMvecEmbeddingDirFmt,
     mmvec
 )
 
 plugin = qiime2.plugin.Plugin(
     name='rhapsody',
     version=__version__,
-    website="https://github.com/mortonjt/rhapsody",
+    website="https://github.com/biocore/rhapsody",
     short_description=('Plugin for performing microbe-metabolite '
                        'co-occurence analysis.'),
     description=('This is a QIIME 2 plugin supporting microbe-metabolite '
                  'co-occurence analysis using mmvec.'),
     package='rhapsody')
+
 
 plugin.methods.register_function(
     function=mmvec,
@@ -47,16 +49,15 @@ plugin.methods.register_function(
         'summary_interval': Int
     },
     outputs=[
-        ('conditionals', FeatureData[Conditional]),
-        ('conditional_biplot', PCoAResults % Properties('biplot'))
+        ('embeddings', MMvecEmbedding)
     ],
     input_descriptions={
         'microbes': 'Input table of microbial counts.',
         'metabolites': 'Input table of metabolite intensities.',
     },
     output_descriptions={
-        'conditionals': 'Mean-centered Conditional log-probabilities.',
-        'conditional_biplot': 'Biplot of microbe-metabolite vectors.',
+        'embeddings': ('Low dimensional representations of the microbes '
+                       'and metabolites')
     },
     parameter_descriptions={
         'metadata': 'Sample metadata table with covariates of interest.',
@@ -78,20 +79,18 @@ plugin.methods.register_function(
                          'coefficients. Smaller values will regularize '
                          'parameters towards zero. Values must be greater '
                          'than 0.'),
-        'learning_rate': ('Gradient descent decay rate.'),
-
+        'learning_rate': ('Gradient descent decay rate.')
     },
     name='Microbe metabolite vectors',
-    description=("Performs bi-loglinear multinomial regression and calculates "
-                 "the conditional probability ranks of metabolite "
-                 "co-occurence given the microbe presence."),
+    description=("Performs co-occurrence analysis for exploring "
+                 "microbe-metabolite interactions"),
     citations=[]
 )
 
 
-plugin.register_formats(ConditionalFormat, ConditionalDirFmt)
-plugin.register_semantic_types(Conditional)
+plugin.register_formats(MMvecEmbeddingFormat, MMvecEmbeddingDirFmt)
+plugin.register_semantic_types(MMvecEmbedding)
 plugin.register_semantic_type_to_format(
-    FeatureData[Conditional], ConditionalDirFmt)
+    FeatureData[MMvecEmbedding], MMvecEmbeddingDirFmt)
 
 importlib.import_module('rhapsody.q2._transformer')

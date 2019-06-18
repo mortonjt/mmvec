@@ -2,25 +2,11 @@ from qiime2.plugin import SemanticType, model
 from q2_types.feature_data import FeatureData
 
 
-
-Conditional = SemanticType('Conditional',
-                           variant_of=FeatureData.field['type'])
-
-
-class ConditionalFormat(model.TextFileFormat):
-    def validate(*args):
-        pass
+MMvecEmbedding = SemanticType('MMvecEmbedding',
+                              variant_of=FeatureData.field['type'])
 
 
-ConditionalDirFmt = model.SingleFileDirectoryFormat(
-    'ConditionalDirFmt', 'conditionals.tsv', ConditionalFormat)
-
-
-Embedding = SemanticType('Embedding',
-                         variant_of=FeatureData.field['type'])
-
-
-class EmbeddingFormat(model.TextFileFormat):
+class MMvecEmbeddingFormat(model.TextFileFormat):
     def validate(self, *args):
         try:
             md = qiime2.Metadata.load(str(self))
@@ -51,5 +37,5 @@ class EmbeddingFormat(model.TextFileFormat):
                 )
 
 
-EmbeddingDirFmt = model.SingleFileDirectoryFormat(
-    'EmbeddingDirFmt', 'embedding.tsv', EmbeddingFormat)
+MMvecEmbeddingDirFmt = model.SingleFileDirectoryFormat(
+    'MMvecEmbeddingDirFmt', 'embedding.tsv', MMvecEmbeddingFormat)
