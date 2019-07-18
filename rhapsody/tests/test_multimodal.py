@@ -16,7 +16,7 @@ class TestMMvec(unittest.TestCase):
         # build small simulation
         self.latent_dim = 2
         res = random_multimodal(
-            num_microbes=8, num_metabolites=8, num_samples=150,
+            num_microbes=20, num_metabolites=20, num_samples=100,
             latent_dim=self.latent_dim, sigmaQ=2, sigmaU=1, sigmaV=1,
             microbe_total=100, metabolite_total=1000, seed=1
         )
@@ -39,17 +39,31 @@ class TestMMvec(unittest.TestCase):
 
         n, d1 = self.trainX.shape
         n, d2 = self.trainY.shape
-        k = self.latent_dim
+        latent_dim = self.latent_dim
 
-        model = MMvec(num_microbes=d1, num_metabolites=d2, latent_dim=k,
-                      batch_size=50, subsample_size=100,
+        model = MMvec(num_microbes=d1, num_metabolites=d2, latent_dim=latent_dim,
+                      batch_size=5, subsample_size=100, gain=2, mc_samples=10,
                       device='cpu')
-        fitted_model = model.fit(
+        model  = model.fit(
             csr_matrix(self.trainX.values), self.trainY.values,
             csr_matrix(self.testX.values), self.testY.values,
-            epochs=20,
-            learning_rate=1e-1, mc_samples=5,
-            beta1=0.9, beta2=0.95, step_size=10)
+            epochs=10, gamma=0.1, learning_rate=1,
+            beta1=0.9, beta2=0.95, step_size=1)
+
+        # Loose checks on the weight matrices to make sure
+        # that we aren't learning complete garbage
+        u = model.embeddings.weight.detach().numpy()
+        v = model.muV.detach().numpy()
+
+        ubias = model.bias.weight.detach().numpy()
+        vbias = model.muVb.detach().numpy()
+        res = spearmanr(pdist(self.U), pdist(u))
+        self.assertGreater(res.correlation, 0.15)
+        self.assertLess(res.pvalue, 0.05)
+
+        res = spearmanr(pdist(self.V.T), pdist(v.T))
+        self.assertGreater(res.correlation, 0.15)
+        self.assertLess(res.pvalue, 0.05)
 
 
 if __name__ == "__main__":

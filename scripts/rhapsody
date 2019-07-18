@@ -25,9 +25,9 @@ def rhapsody():
 
 
 @rhapsody.command()
-@click.option('--input-seq-counts',
+@click.option('--exog-features',
               help='Input sequence counts to use for prediction.')
-@click.option('--output-seq-counts',
+@click.option('--endog-features',
               help=('Output sequence abundances to predict '
                     'from input sequence counts.'))
 @click.option('--metadata-file', default=None,
@@ -49,7 +49,7 @@ def rhapsody():
 @click.option('--batch-size',
               help='Number of samples to analyze per iteration.', default=10)
 @click.option('--subsample-size',
-              help='Number of sequences to analyze per sample.', default=10)
+              help='Number of sequences to analyze per sample.', default=100)
 @click.option('--mc-samples',
               help='Number of Monte Carlo samples to estimate gradient steps.',
               default=5)
@@ -86,18 +86,18 @@ def rhapsody():
               default=1000)
 @click.option('--summary-dir', default='summarydir',
               help='Summary directory to save cross validation results.')
-@click.option('--params-file', default=None,
-              help=('Parameter file containing microbe-metabolite '
+@click.option('--model-output', default=None,
+              help=('Model parameter file containing microbe-metabolite '
                     'interaction parameters.'))
-def seq2seq(input_seq_counts, output_seq_counts,
+def seq2seq(exog_features, endog_features,
             metadata_file, training_column,
             num_testing_examples, min_feature_count,
             epochs, batch_size, subsample_size, mc_samples,
             latent_dim, arm_the_gpu, learning_rate,
             decay_rate, step_size, beta1, beta2, seed,
             checkpoint_interval, summary_interval,
-            summary_dir, params_file):
-
+            summary_dir, model_output):
+    input_seq_counts, output_seq_counts = exog_features, endog_features
     # set random seed if specified
     if seed is not None:
         np.random.seed(seed)
@@ -138,13 +138,13 @@ def seq2seq(input_seq_counts, output_seq_counts,
 
     sname = os.path.join(summary_dir, sname)
 
-    n, d1 = microbes.shape
-    n, d2 = metabolites.shape
-
     trainX = csr_matrix(train_microbes_df.values)
     testX = csr_matrix(test_microbes_df.values)
     trainY = train_metabolites_df.values
     testY = test_metabolites_df.values
+
+    n, d1 = trainX.shape
+    n, d2 = trainY.shape
 
     if arm_the_gpu:
         # pick out the first GPU
@@ -155,7 +155,7 @@ def seq2seq(input_seq_counts, output_seq_counts,
     model = MMvec(num_microbes=d1, num_metabolites=d2, latent_dim=latent_dim,
                   batch_size=batch_size, subsample_size=subsample_size,
                   device=device_name)
-    fitted_model, losses = model.fit(
+    fitted_model = model.fit(
         trainX, trainY, testX, testY,
         epochs=epochs, gamma=decay_rate,
         learning_rate=learning_rate, mc_samples=mc_samples,
@@ -164,36 +164,36 @@ def seq2seq(input_seq_counts, output_seq_counts,
         checkpoint_interval=checkpoint_interval)
 
     # now extract the model weights and save them to disk
-    mu_u = fitted_model.embeddings.weight.detach().numpy()
-    mu_ub = fitted_model.bias.weight.detach().numpy().reshape(-1, 1)
-    mu_v = fitted_model.muV.detach().numpy()
-    mu_vb = fitted_model.muVb.detach().numpy().reshape(-1, 1)
+    mu_u = fitted_model.embeddings.weight.detach().cpu().numpy()
+    mu_ub = fitted_model.bias.weight.detach().cpu().numpy().reshape(-1, 1)
+    mu_v = fitted_model.muV.detach().cpu().numpy()
+    mu_vb = fitted_model.muVb.detach().cpu().numpy().reshape(-1, 1)
 
-    std_u = np.exp(fitted_model.logstdU.weight.detach().numpy())
+    std_u = np.exp(fitted_model.logstdU.weight.detach().cpu().numpy())
     std_ub = np.exp(
-        fitted_model.logstdUb.weight.detach().numpy()
+        fitted_model.logstdUb.weight.detach().cpu().numpy()
     ).reshape(-1, 1)
-    std_v = np.exp(fitted_model.logstdV.detach().numpy())
+    std_v = np.exp(fitted_model.logstdV.detach().cpu().numpy())
     std_vb = np.exp(
-        fitted_model.logstdVb.detach().numpy()
+        fitted_model.logstdVb.detach().cpu().numpy()
     ).reshape(-1, 1)
 
     otu_ids = list(map(lambda x: 'clr(%s)' % x,
                        list(train_microbes_df.columns)))
-    ms_ids = list(train_metabolite_df.columns)
-    pc_ids = ['PC%d' % i for i in range(len(u.shape[1]))]
+    ms_ids = list(train_metabolites_df.columns)
+    pc_ids = ['PC%d' % i for i in range(mu_u.shape[1])]
     alr_ms_ids = ['log(%s:%s)' % (ms_ids[i], ms_ids[0])
                   for i in range(1, len(ms_ids))]
 
     df = pd.concat(
         (
             format_params(mu_u, std_u, pc_ids, otu_ids, 'microbe'),
-            format_params(mu_v, std_v, pc_ids, alr_ms_ids, 'metabolite'),
+            format_params(mu_v.T, std_v.T, pc_ids, alr_ms_ids, 'metabolite'),
             format_params(mu_ub, std_ub, ['bias'], otu_ids, 'microbe'),
             format_params(mu_vb, std_vb, ['bias'], alr_ms_ids, 'metabolite')
         ), axis=0)
 
-    df.to_csv(params_file)
+    df.to_csv(model_output)
 
 
 if __name__ == '__main__':
