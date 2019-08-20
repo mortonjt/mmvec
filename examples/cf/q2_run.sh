@@ -1,7 +1,7 @@
 qiime tools import --input-path otus_nt.biom --output-path otus_nt.qza --type FeatureTable[Frequency]
 qiime tools import --input-path lcms_nt.biom --output-path lcms_nt.qza --type FeatureTable[Frequency]
 
-qiime rhapsody mmvec \
+qiime mmvec mmvec \
       --i-microbes otus_nt.qza \
       --i-metabolites lcms_nt.qza  \
       --p-epochs 100 \

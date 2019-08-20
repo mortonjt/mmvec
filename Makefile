@@ -9,7 +9,7 @@ help:
 test:
 	$(TEST_COMMAND)
 pep8:
-	pycodestyle rhapsody setup.py
-	flake8 rhapsody setup.py
+	pycodestyle mmvec setup.py
+	flake8 mmvec setup.py
 
 all: pep8 test

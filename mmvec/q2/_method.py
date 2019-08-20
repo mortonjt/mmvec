@@ -4,8 +4,8 @@ import numpy as np
 import tensorflow as tf
 from skbio import OrdinationResults
 from qiime2.plugin import Metadata
-from rhapsody.multimodal import MMvec
-from rhapsody.util import split_tables
+from mmvec.multimodal import MMvec
+from mmvec.util import split_tables
 from scipy.sparse import coo_matrix
 from scipy.sparse.linalg import svds
 
