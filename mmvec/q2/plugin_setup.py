@@ -81,6 +81,78 @@ plugin.methods.register_function(
     citations=[]
 )
 
+plugin.visualizers.register_function(
+    function=heatmap,
+    inputs={'ranks': FeatureData[Conditional]},
+    parameters={
+        'microbe_metadata': MetadataColumn[Categorical],
+        'metabolite_metadata': MetadataColumn[Categorical],
+        'method': Str % Choices(_heatmap_choices['method']),
+        'metric': Str % Choices(_heatmap_choices['metric']),
+        'color_palette': Str % Choices(_cmaps['heatmap']),
+        'margin_palette': Str % Choices(_cmaps['margins']),
+        'x_labels': Bool,
+        'y_labels': Bool,
+        'level': Int % Range(-1, None),
+    },
+    input_descriptions={'ranks': 'Conditional probabilities.'},
+    parameter_descriptions={
+        'microbe_metadata': 'Optional microbe metadata for annotating plots.',
+        'metabolite_metadata': 'Optional metabolite metadata for annotating '
+                               'plots.',
+        'method': 'Hierarchical clustering method used in clustermap.',
+        'metric': 'Distance metric used in clustermap.',
+        'color_palette': 'Color palette for clustermap.',
+        'margin_palette': 'Name of color palette to use for annotating '
+                          'metadata along margin(s) of clustermap.',
+        'x_labels': 'Plot x-axis (metabolite) labels?',
+        'y_labels': 'Plot y-axis (microbe) labels?',
+        'level': 'taxonomic level for annotating clustermap. Set to -1 if not '
+                 'parsing semicolon-delimited taxonomies or wish to print '
+                 'entire annotation.',
+    },
+    name='Conditional probability heatmap',
+    description="Generate heatmap depicting mmvec conditional probabilities.",
+    citations=[]
+)
+
+plugin.visualizers.register_function(
+    function=paired_heatmap,
+    inputs={'ranks': FeatureData[Conditional],
+            'microbes_table': FeatureTable[Frequency],
+            'metabolites_table': FeatureTable[Frequency]},
+    parameters={
+        'microbe_metadata': MetadataColumn[Categorical],
+        'features': List[Str],
+        'color_palette': Str % Choices(_cmaps['heatmap']),
+        'normalize': Str % Choices(['log10', 'z_score']),
+        'top_k_metabolites': Int % Range(1, None),
+        'level': Int % Range(-1, None),
+    },
+    input_descriptions={'ranks': 'Conditional probabilities.',
+                        'microbes_table': 'Microbial feature abundances.',
+                        'metabolites_table': 'Metabolite feature abundances.'},
+    parameter_descriptions={
+        'microbe_metadata': 'Optional microbe metadata for annotating plots.',
+        'features': 'Microbial feature IDs to display in heatmap.',
+        'color_palette': 'Color palette for clustermap.',
+        'normalize': 'Optional normalize heatmap values by column values.',
+        'top_k_metabolites': 'Select top k metabolites associated with the '
+                             'chosen features to display on heatmap.',
+        'level': 'taxonomic level for annotating clustermap. Set to -1 if not '
+                 'parsing semicolon-delimited taxonomies or wish to print '
+                 'entire annotation.',
+    },
+    name='Paired feature abundance heatmaps',
+    description="Generate paired heatmaps that depict microbial and "
+                "metabolite feature abundances. The left panel displays the "
+                "abundance of each selected microbial feature in each sample. "
+                "The right panel displays the abundances of the top k "
+                "metabolites most highly correlated with these microbes in "
+                "each sample. The y-axis (sample axis) is shared between each "
+                "panel.",
+    citations=[]
+)
 
 plugin.register_formats(ConditionalFormat, ConditionalDirFmt)
 plugin.register_semantic_types(Conditional)
