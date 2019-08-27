@@ -8,15 +8,16 @@
 import importlib
 import qiime2.plugin
 import qiime2.sdk
-from mmvec import __version__
-from qiime2.plugin import Str, Properties, Int, Float, Metadata, Bool
+from mmvec import __version__, _heatmap_choices, _cmaps
+from qiime2.plugin import (Str, Properties, Int, Float, Metadata, Bool, List,
+                           MetadataColumn, Categorical, Range, Choices)
 from q2_types.feature_table import FeatureTable, Frequency
 from q2_types.feature_data import FeatureData
 from q2_types.ordination import PCoAResults
 
 from mmvec.q2 import (
     Conditional, ConditionalFormat, ConditionalDirFmt,
-    mmvec
+    mmvec, heatmap, paired_heatmap
 )
 
 plugin = qiime2.plugin.Plugin(
@@ -72,7 +73,6 @@ plugin.methods.register_function(
         'num_workers': ('Number of worker processes for training'),
         'learning_rate': ('Gradient descent decay rate.'),
         'arm_the_gpu': ('Enable the GPU for computation.')
-
     },
     name='Microbe metabolite vectors',
     description=("Performs bi-loglinear multinomial regression and calculates "
