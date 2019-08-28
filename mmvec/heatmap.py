@@ -152,13 +152,13 @@ def paired_heatmaps(ranks, microbes_table, metabolites_table,
             raise ValueError('features must represent feature IDs in '
                              'microbes_table. Missing microbe(s): {0}'.format(
                                  missing_microbes))
-    elif keep_maximal_samples:
+    elif keep_maximal_features:
         f = lambda v, i, m: np.argmax(v)
         i = microbes_table.apply(f, axis='sample')
         features = list(microbe_table.ids(axis='observation')[i])
     else:
         raise ValueError('Need to either specify `features` or '
-                         '`keep_maximal_samples`.')
+                         '`keep_maximal_features`.')
 
     # filter select microbes from microbe table and sort by abundance
     sort_orders = [False] + [True] * (len(features) - 1)
