@@ -49,11 +49,14 @@ def paired_heatmap(output_dir: str,
                    normalize: str = 'log10',
                    color_palette: str = 'magma',
                    top_k_metabolites: int = 50,
+                   keep_maximal_features: bool = True,
                    level: int = -1) -> None:
     if microbe_metadata is not None:
         microbe_metadata = microbe_metadata.to_series()
     hotmaps = paired_heatmaps(ranks, microbes_table, metabolites_table,
-                              microbe_metadata, features, top_k_metabolites,
+                              sample_metadata, microbe_metadata,
+                              features, top_k_metabolites,
+                              keep_maximal_features,
                               level, normalize, color_palette)
 
     hotmaps.savefig(join(output_dir, 'heatmap.pdf'), bbox_inches='tight')

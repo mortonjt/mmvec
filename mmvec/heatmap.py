@@ -2,6 +2,9 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
 import warnings
+from skbio.stats.compositon import (
+    multiplicative_replacement, clr, centralize
+)
 
 
 _heatmap_choices = {
@@ -106,8 +109,10 @@ def ranks_heatmap(ranks, microbe_metadata=None, metabolite_metadata=None,
     return hotmap
 
 
-def paired_heatmaps(ranks, microbes_table, metabolites_table, microbe_metadata,
-                    features, top_k_metabolites=50, level=-1,
+def paired_heatmaps(ranks, microbes_table, metabolites_table,
+                    sample_metadata, microbe_metadata,
+                    features=None, top_k_metabolites=50,
+                    keep_maximal_features=False, level=-1,
                     normalize='log10', color_palette='magma'):
     '''
     Creates paired heatmaps of microbe abundances and metabolite abundances.
@@ -120,28 +125,40 @@ def paired_heatmaps(ranks, microbes_table, metabolites_table, microbe_metadata,
         Microbe feature abundances per sample.
     metabolites_table: biom.Table
         Metabolite feature abundances per sample.
+    sample_metadata: pd.Series
+        Sample metadata for annotating plots
     microbe_metadata: pd.Series
         Microbe metadata for annotating plots
     features: list
-        Select microbial feature IDs to display on paired heatmap.
+        Select microbial feature IDs to display on paired heatmap (optional).
     top_k_metabolites: int
         Select top k metabolites associated with the chosen features to
         display on heatmap.
+    keep_maximal_features : bool
+        Keep only the microbes that are the most abundant in at least 1 sample.
     level: int
         taxonomic level for annotating clustermap.
         Set to -1 if not parsing semicolon-delimited taxonomies.
     normalize: str
         Column normalization strategy to use for heatmaps. Must
-        be "log10", "z_score", or None
+        be "log10", "z_score", "clr", or None
     color_palette: str
-        Color palette for heatmaps.
+        Color palette for microbes in heatmaps.
     '''
-    # validate microbes
-    missing_microbes = set(features) - set(microbes_table.ids('observation'))
-    if len(missing_microbes) > 0:
-        raise ValueError('features must represent feature IDs in '
-                         'microbes_table. Missing microbe(s): {0}'.format(
-                            missing_microbes))
+    if features is not None:
+        # validate microbes
+        missing_microbes = set(features) - set(microbes_table.ids('observation'))
+        if len(missing_microbes) > 0:
+            raise ValueError('features must represent feature IDs in '
+                             'microbes_table. Missing microbe(s): {0}'.format(
+                                 missing_microbes))
+    elif keep_maximal_samples:
+        f = lambda v, i, m: np.argmax(v)
+        i = microbes_table.apply(f, axis='sample')
+        features = list(microbe_table.ids(axis='observation')[i])
+    else:
+        raise ValueError('Need to either specify `features` or '
+                         '`keep_maximal_samples`.')
 
     # filter select microbes from microbe table and sort by abundance
     sort_orders = [False] + [True] * (len(features) - 1)
@@ -151,13 +168,13 @@ def paired_heatmaps(ranks, microbes_table, metabolites_table, microbe_metadata,
     select_microbes = select_microbes.sort_values(
         features[::-1], ascending=sort_orders)
 
-    # find top 50 metabolites (highest positive ranks)
+    # find top k metabolites (highest positive ranks)
     microb_ranks = ranks.loc[features]
     top_metabolites = microb_ranks.max()
     top_metabolites = top_metabolites.sort_values(ascending=False)
     top_metabolites = top_metabolites[:top_k_metabolites].index
 
-    # grab top 50 metabolites in metabolite table
+    # grab top k metabolites in metabolite table
     select_metabolites = metabolites_table.copy().filter(
         top_metabolites, 'observation').to_dataframe().T
 
@@ -198,6 +215,7 @@ def paired_heatmaps(ranks, microbes_table, metabolites_table, microbe_metadata,
     sns.heatmap(select_metabolites.values, cmap=color_palette,
                 cbar_kws={'label': cbar_label}, ax=axes[1],
                 xticklabels=False, yticklabels=False)
+
     axes[0].set_ylabel('Samples')
     axes[0].set_xlabel('Microbes')
     axes[1].set_xlabel('Metabolites')
@@ -301,3 +319,8 @@ def _normalize_by_column(table, method):
         return (table - table.mean()) / table.std()
     elif method == 'log10':
         return table.apply(lambda x: np.log10(x + 1))
+    elif method = 'clr':
+        x = multiplicative_replacement(table.copy(), delta=1e-6))
+        return pd.DataFrame(clr(centralize(x)),
+                            index=table.index,
+                            columns=table.columns)
