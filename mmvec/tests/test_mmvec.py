@@ -9,10 +9,10 @@ from scipy.spatial.distance import pdist
 from mmvec.mmvec import MMvec
 from mmvec.util import random_multimodal
 from mmvec.dataset import split_tables
-from mmvec.scheduler import AlternatingStepLR
 import torch
 import torch.optim as optim
 import torch.nn.functional as F
+from torch.optim.lr_scheduler import StepLR
 from torch.nn.utils import clip_grad_norm_
 from torch.utils.data import DataLoader
 from tensorboardX import SummaryWriter
@@ -52,8 +52,8 @@ class TestMMvecTrack(unittest.TestCase):
     def test_track(self):
         batch = 50
         epochs = 100
-        learning_rate = 0.1
-        step_size = 10
+        learning_rate = 0.001
+        step_size = 30
         beta1 = 0.9
         beta2 = 0.999
         clip_norm = 10
@@ -83,7 +83,7 @@ class TestMMvecTrack(unittest.TestCase):
             ],
             betas=(beta1, beta2))
 
-        scheduler = AlternatingStepLR(optimizer, step_size)
+        scheduler = StepLR(optimizer, step_size)
         for iteration in range(epochs):
             model.train()
             for inp, out in train_dataloader:
